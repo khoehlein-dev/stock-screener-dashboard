@@ -23,6 +23,7 @@ dependencies = [
   "dash-ag-grid>=31",
   "plotly>=5.20",
   "typer>=0.12",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,9 @@ screener = "stock_screener.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["stock_screener*"]
+
+[tool.setuptools.package-data]
+stock_screener = ["../config/*.yaml"]
 
 [tool.ruff]
 line-length = 100

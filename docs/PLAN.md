@@ -301,3 +301,84 @@ deterministic.
 5. P-measure adjustment (e.g. Ross recovery or empirical pricing-kernel
    calibration) clearly separated from risk-neutral columns.
 6. Alerts (screen conditions → notifications) and saved screens.
+
+## 10. Derivatives tab: knock-out certificates and warrant strategies
+
+### 10.1 Scope
+A second top-level tab lists the leveraged retail products available at the
+broker (Scalable Capital) for every screened underlying, samples buy-only
+strategies of up to four instruments, evaluates them probabilistically against
+the option-implied distribution of the underlying, and recommends the best
+realization per strategy class and underlying. The dashboard never places
+orders; the CLI is used for queries only.
+
+### 10.2 Data source
+The broker's CLI could not be verified from the development environment, so the
+adapter (`derivatives/sources.py`) is configuration-driven: `config/derivatives.yaml`
+holds the command template (placeholders `{underlying}`, `{type}`, `{ticker}`),
+the ticker→identifier map, the output format (JSON / JSON lines / CSV) and the
+field mapping with dotted paths and a product-type value map. A `file` source
+reads exported CLI output with the same mapping and a `synthetic` source
+generates a shelf from the underlying's spot and surface. `screener derivatives
+probe` prints what the adapter parses. Products carry ISIN/WKN, issuer, type,
+strike, barrier, ratio, bid/ask, maturity (None = open-end), leverage and,
+when delivered, the financing rate.
+
+### 10.3 Costs
+`config/costs.yaml` is the only place with fee numbers: plan (FREE Broker,
+PRIME+), venue (gettex, Xetra) order fees (fixed, percentage, minimum, free
+above a threshold), partner-issuer conditions, exit-spread assumptions,
+knock-out recovery, default KO financing rates, EUR/USD and optional taxes.
+The file is flagged `verified: false` until checked against the current price
+list; the UI shows the active fee description in its status line.
+
+### 10.4 Product models
+* Open-end KO: value = intrinsic × ratio / FX; the strike accrues the financing
+  rate (`K_t = K·e^{fin·t}`, shorts with the opposite sign) and the barrier moves
+  proportionally. On knock-out the holder receives `recovery × |barrier − strike|
+  × ratio / FX` (zero for classic turbos).
+* Warrants: Black-Scholes-Merton with the warrant's own implied volatility
+  (solved with QuantLib from the mid) held constant over the holding period;
+  American exercise and issuer vol changes are ignored (documented limitation).
+* Product grids show fair value, premium over fair value, implied vs listed-
+  option volatility, delta, leverage and barrier distance.
+
+### 10.5 Strategy classes and sampling heuristics
+Twelve buy-only classes: long/short KO, call/put warrant, KO long/short ladders
+(2–4 legs, staggered barriers), warrant straddle and strangle, KO + warrant
+hedge (long/put, short/call), KO long+short pair, call-warrant ladder. The
+search space is bounded by product filters (price, spread, barrier distance,
+leverage, maturity window, moneyness), spread-based bucketing (barrier-distance
+buckets for KOs, moneyness × maturity buckets for warrants, ≤ 12 products per
+type), class constraints (minimum barrier spacing, strike gaps, equal
+maturities) and a cap per class with evenly spaced retention along the class
+parameter (so the retained set still spans the whole range).
+
+### 10.6 Evaluation
+Terminal prices are drawn from the screener's risk-neutral density at the
+strategy horizon (stratified inverse-CDF sampling, common random numbers across
+products). The drift is configurable: risk-neutral (default), a fixed annual
+premium, or the underlying's historical 6-month trend (capped). Knock-out
+events are drawn with the Brownian-bridge crossing probability given start and
+end price, using the surface vol at the barrier. Each leg is bought at the ask
+(integer quantities from a budget split), sold at the modelled exit price minus
+half the spread, with entry and exit order fees from the cost model. Metrics:
+expected, median and std of return, P(profit), P(loss > 50 %), P(total loss),
+P(knock-out), VaR/ES 5 %, 95th/99th percentiles, Omega, utility
+`E[r] − λ·|ES₅|`, effective leverage, break-even moves and cost drag.
+
+### 10.7 Recommendation and stability
+Per underlying and class, realizations with P(total loss) above a configurable
+limit are excluded; the rest are ranked by utility. The best is flagged with the
+utility gap to the runner-up and a stability score (1 − dispersion of utility
+among its neighbours along the class parameter). The detail view shows the
+payoff at the horizon (deterministic and knock-out-adjusted) over the implied
+distribution, the return histogram with VaR/ES, the risk/return scatter of all
+sampled realizations with the recommendation highlighted, and the metrics
+along the class parameter.
+
+### 10.8 Limitations
+Unverified CLI interface and fee values; FX risk not simulated (static
+EUR/USD); warrant vol held constant; continuous barrier monitoring (overnight
+gaps only through the terminal distribution); risk-neutral expectations embed
+risk premia unless a drift mode is chosen; issuer credit risk ignored.

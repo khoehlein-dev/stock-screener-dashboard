@@ -1,0 +1,114 @@
+# Derivatives data source, strategy sampling heuristics and evaluation parameters.
+
+source:
+  # "cli"       -> run the Scalable Capital CLI (see `cli` below) per underlying
+  # "file"      -> read exported CLI output from files under `file.directory`
+  # "synthetic" -> generated products for demos and tests
+  kind: "synthetic"
+
+  # Mapping from screener ticker to the identifier the CLI expects (ISIN, name, ...).
+  # Tickers not listed are passed through unchanged.
+  underlying_map:
+    AAPL: "US0378331005"
+    MSFT: "US5949181045"
+    NVDA: "US67066G1040"
+    AMZN: "US0231351067"
+    GOOGL: "US02079K3059"
+    META: "US30303M1027"
+    TSLA: "US88160R1014"
+
+  cli:
+    # ASSUMPTION: the CLI's search sub-command and flags are configurable here
+    # because the tool's interface could not be verified while this was written.
+    # Placeholders: {underlying} (mapped id), {type} (one of `type_args`), {ticker}.
+    # The command must print JSON (an array, an object with `results`, or JSON lines) or CSV.
+    command: ["scalable", "derivatives", "search", "--underlying", "{underlying}", "--type", "{type}", "--format", "json"]
+    type_args:
+      ko_long: "knockout-long"
+      ko_short: "knockout-short"
+      call_warrant: "warrant-call"
+      put_warrant: "warrant-put"
+    timeout_seconds: 60
+    output_format: "json"          # json | csv
+    # Field mapping: our field -> key in the CLI output (dotted paths allowed).
+    fields:
+      isin: "isin"
+      wkn: "wkn"
+      name: "name"
+      issuer: "issuer"
+      product_type: "type"          # value mapped through `type_values`
+      strike: "strike"
+      barrier: "knockOut"
+      ratio: "ratio"
+      bid: "bid"
+      ask: "ask"
+      maturity: "maturity"          # ISO date or null/"open-end"
+      leverage: "leverage"
+      financing_rate: "financingRate"
+      currency: "currency"
+      quote_time: "quoteTime"
+    type_values:                    # CLI type value -> our product_type
+      "KNOCKOUT_LONG": ko_long
+      "KNOCKOUT_SHORT": ko_short
+      "WARRANT_CALL": call_warrant
+      "WARRANT_PUT": put_warrant
+      "Call": call_warrant
+      "Put": put_warrant
+      "Long": ko_long
+      "Short": ko_short
+
+  file:
+    directory: "data/derivatives/raw"   # one <TICKER>.json (or .csv) per underlying, same field mapping as `cli.fields`
+
+  synthetic:
+    seed: 7
+    ko_barrier_distances: [0.03, 0.05, 0.075, 0.10, 0.125, 0.15, 0.20, 0.25, 0.30, 0.40]
+    warrant_moneyness: [0.80, 0.90, 0.95, 1.00, 1.05, 1.10, 1.20]
+    warrant_maturities_days: [45, 90, 180, 365]
+    issuers: ["HSBC", "UniCredit", "Goldman Sachs", "Societe Generale", "Vontobel", "Citi"]
+
+# Universe of products considered per underlying (applied before sampling)
+filters:
+  min_price: 0.10                   # EUR per unit
+  max_spread_pct: 0.04
+  ko:
+    min_barrier_distance: 0.02      # relative distance spot -> barrier
+    max_barrier_distance: 0.50
+    max_leverage: 25
+  warrants:
+    min_days_to_maturity_after_horizon: 20
+    max_days_to_maturity: 730
+    moneyness_range: [0.70, 1.35]   # strike / spot
+
+# Heuristics that bound the strategy search space
+sampling:
+  # per underlying and product type: keep the product with the lowest spread in each bucket
+  ko_bucket_width: 0.025            # bucket by barrier distance
+  warrant_strike_bucket: 0.05       # bucket by moneyness ...
+  warrant_maturity_buckets_days: [60, 120, 240, 400, 800]   # ... and by maturity bucket
+  max_products_per_type: 12
+  max_realizations_per_class: 80
+  ladder_min_barrier_spacing: 0.03
+  ladder_sizes: [2, 3, 4]
+  straddle_max_strike_gap: 0.06     # |K_call - K_put| / spot
+  strangle_min_wing: 0.04
+
+# Probabilistic evaluation
+evaluation:
+  horizon_days: 30                  # holding period (calendar days)
+  budget_eur: 1000.0                # capital per strategy realization
+  n_samples: 20000
+  seed: 42
+  # Expected underlying performance:
+  #   risk_neutral -> the market-implied (option) distribution as is (no risk premium)
+  #   fixed        -> add `drift_adjustment_annual` (e.g. 0.05 = 5 % p.a. equity premium)
+  #   historical   -> replace the drift by the annualised 6-month momentum of the stock
+  drift_mode: "risk_neutral"
+  drift_adjustment_annual: 0.05
+  max_abs_drift_annual: 0.5
+  # utility = expected_return - risk_aversion * |ES_5|  (returns relative to invested capital)
+  risk_aversion: 0.5
+  es_alpha: 0.05
+  # realizations with P(total loss) above this are excluded from the recommendation
+  max_total_loss_probability: 0.60
+  neighbours_for_stability: 5

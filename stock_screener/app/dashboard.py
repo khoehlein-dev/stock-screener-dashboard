@@ -21,6 +21,7 @@ from plotly.subplots import make_subplots
 from ..analytics.chain import SmileFit
 from ..config import Settings
 from ..data.cache import DataCache
+from . import derivatives_tab
 from .columns import BY_KEY, COLUMNS, GROUPS, ColumnSpec
 from .presets import PRESETS
 
@@ -410,7 +411,11 @@ body { background: #f9f9f7; color: #0b0b0b; font-family: Inter, system-ui, -appl
 .header { display:flex; align-items:baseline; gap:16px; padding: 12px 16px 6px; border-bottom: 1px solid #e1e0d9; background:#fcfcfb; }
 .header h1 { font-size: 18px; margin: 0; }
 .status { color:#52514e; font-size: 12px; }
-.layout { display:grid; grid-template-columns: 290px 1fr; gap: 12px; padding: 12px 16px; }
+.layout { display:grid; grid-template-columns: 290px 1fr; gap: 12px; padding: 12px 0; }
+.main-tabs { padding: 0 16px; }
+.main-tabs .tab { padding: 8px 14px !important; font-size: 14px; }
+table.classes { border-collapse: collapse; font-size: 12px; margin: 6px 0 10px; }
+table.classes th, table.classes td { border-bottom: 1px solid #e1e0d9; padding: 4px 10px 4px 0; text-align: left; vertical-align: top; }
 .sidebar { background:#fcfcfb; border:1px solid #e1e0d9; border-radius:8px; padding:12px; font-size: 13px; max-height: calc(100vh - 90px); overflow:auto; }
 .sidebar h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color:#898781; margin: 12px 0 6px; }
 .sidebar label { display:flex; align-items:center; gap:6px; margin: 2px 0; }
@@ -435,24 +440,56 @@ details summary { cursor:pointer; font-weight: 600; }
 def create_app(settings: Settings | None = None, data_dir: Path | None = None) -> Dash:
     settings = settings or Settings()
     store = ScreenerStore(Path(data_dir or settings.data_dir))
+    dstore = derivatives_tab.DerivativesStore(settings, Path(data_dir or settings.data_dir))
     app = Dash(__name__, title="Stock Screener", suppress_callback_exceptions=True)
     app.index_string = app.index_string.replace("</head>", f"<style>{CSS}</style></head>")
-    app.layout = _layout(store, settings)
+    app.layout = html.Div(
+        [
+            html.Div(
+                [
+                    html.H1("Stock Screener"),
+                    html.Span(_status_text(store, settings), className="status", id="status"),
+                ],
+                className="header",
+            ),
+            dcc.Tabs(
+                id="main-tabs",
+                value="screener",
+                className="main-tabs",
+                children=[
+                    dcc.Tab(label="Screener", value="screener", children=_layout(store, settings)),
+                    dcc.Tab(
+                        label="Derivatives (KO certificates & warrants)",
+                        value="derivatives",
+                        children=html.Div(
+                            derivatives_tab.layout(dstore), style={"padding": "8px 16px"}
+                        ),
+                    ),
+                ],
+            ),
+        ]
+    )
     _register_callbacks(app, store, settings)
+    derivatives_tab.register_callbacks(app, dstore)
     app.store = store  # type: ignore[attr-defined]
+    app.dstore = dstore  # type: ignore[attr-defined]
     return app
+
+
+def _status_text(store: ScreenerStore, settings: Settings) -> str:
+    df = store.df
+    n_opt = int(df["iv_30"].notna().sum()) if "iv_30" in df else 0
+    if not store.as_of:
+        return "No data yet — run `screener refresh` (or `screener demo`)."
+    return (
+        f"Data as of {store.as_of} · {len(df)} tickers · {n_opt} with option analytics · "
+        f"provider: {settings.resolved_provider()} · r = {settings.risk_free_rate:.2%}"
+    )
 
 
 def _layout(store: ScreenerStore, settings: Settings) -> html.Div:
     df = store.df
     sectors = sorted(s for s in df.get("sector", pd.Series(dtype=str)).dropna().unique() if s)
-    n_opt = int(df["iv_30"].notna().sum()) if "iv_30" in df else 0
-    status = (
-        f"Data as of {store.as_of} · {len(df)} tickers · {n_opt} with option analytics · "
-        f"provider: {settings.resolved_provider()} · r = {settings.risk_free_rate:.2%}"
-        if store.as_of
-        else "No data yet — run `screener refresh` (or `screener demo`)."
-    )
     group_checklists = []
     for g in GROUPS:
         cols = [c for c in COLUMNS if c.group == g]
@@ -475,10 +512,6 @@ def _layout(store: ScreenerStore, settings: Settings) -> html.Div:
         )
     return html.Div(
         [
-            html.Div(
-                [html.H1("Stock Screener"), html.Span(status, className="status", id="status")],
-                className="header",
-            ),
             html.Div(
                 [
                     html.Div(

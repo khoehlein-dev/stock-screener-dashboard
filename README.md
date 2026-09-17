@@ -13,6 +13,15 @@ filterable table with configurable columns and a per-ticker detail panel.
 
 The functional and technical plan is in [`docs/PLAN.md`](docs/PLAN.md).
 
+> **Disclaimer.** The metrics, scores, strategy evaluations and recommendations
+> shown by this dashboard are model outputs for informational and educational
+> purposes only. They are **not financial advice** and no investment
+> recommendation is made. Leveraged derivatives (knock-out certificates,
+> warrants) can lose their entire value. The authors of this dashboard accept
+> no responsibility or liability for any losses, damages or legal issues
+> arising from its use; you act solely at your own risk and are responsible
+> for verifying all inputs (data, fees, entitlements) yourself.
+
 ## Quick start (no API key needed)
 
 ```bash
@@ -72,10 +81,50 @@ forecasts. See `docs/PLAN.md` §4 and §8 for the methodology and its limits.
    formula), second derivative → risk-neutral density → probabilities, VaR,
    expected shortfall, moments, expected move.
 
+## Derivatives tab: knock-out certificates and warrants (Scalable Capital)
+
+The second top-level tab evaluates buy-only strategies built from leveraged
+retail products on the screened underlyings.
+
+```bash
+screener refresh                          # screener data first (spot, option surface)
+screener derivatives refresh              # products -> strategies -> data/derivatives/*.parquet
+screener derivatives probe AAPL --source cli   # check the CLI field mapping
+screener serve
+```
+
+* **Product sources** (`config/derivatives.yaml`): `cli` runs the Scalable
+  Capital CLI per underlying and product type (query only, no trading), `file`
+  reads exported CLI output (`data/derivatives/raw/<TICKER>.json|csv`), and
+  `synthetic` generates a product shelf for demos and tests. The CLI's command
+  line and output-field mapping are configurable because the tool's interface
+  could not be verified while this was written; `probe` shows what is parsed.
+* **Costs** (`config/costs.yaml`): order fees per plan and venue, partner-issuer
+  conditions, exit spread assumptions, knock-out recovery, KO financing rates,
+  EUR/USD, optional tax. Nothing is hard-coded, and the template values are
+  marked `verified: false` until you check them against the current price list.
+* **Strategy classes** (up to four instruments): long/short KO, call/put warrant,
+  KO ladders (2–4 staggered barriers), warrant straddle/strangle, KO + warrant
+  hedge, KO long+short pair, call-warrant ladder. Realizations are sampled per
+  underlying with heuristics (product filters, spread-based bucketing, barrier
+  spacing, per-class caps) to bound the search.
+* **Evaluation**: terminal prices are sampled from the screener's option-implied
+  distribution (drift mode: risk-neutral, fixed premium, or historical trend);
+  knock-outs use the Brownian-bridge crossing probability; warrants are
+  re-priced with their own implied volatility; all fees and spreads are applied.
+  Metrics: expected/median return, P(profit), P(knock-out), P(total loss),
+  VaR/ES 5 %, Omega, utility = E[r] − λ·|ES|, effective leverage, break-evens.
+  The best realization per class and underlying is flagged, with a stability
+  score and the utility gap to the runner-up.
+* **Detail view**: payoff at the horizon vs. underlying move with the implied
+  distribution, return histogram with VaR/ES, risk/return scatter of all
+  sampled realizations (recommended one highlighted), and metrics along the
+  class parameter to judge how stable the optimum is.
+
 ## Development
 
 ```bash
-pytest -q          # 27 tests: technicals, QuantLib round trips, density vs lognormal, pipeline, UI
+pytest -q          # 39 tests: technicals, QuantLib round trips, density vs lognormal, pipeline, UI
 ruff check . && ruff format --check .
 ```
 
@@ -86,8 +135,10 @@ stock_screener/
   config.py            settings (.env / SCREENER_* variables)
   data/                provider protocol, Massive + synthetic providers, cache, IV history
   analytics/           technicals, QuantLib pricing, chain fitting, risk-neutral density, scoring, pipeline
-  app/                 column registry, presets, Dash application
-  cli.py               screener refresh | serve | demo | columns
+  app/                 column registry, presets, Dash application, derivatives tab
+  derivatives/         product model, sources (CLI/file/synthetic), costs, pricing, strategies, evaluation
+  cli.py               screener refresh | serve | demo | columns | derivatives refresh|probe
+config/                costs.yaml (fees), derivatives.yaml (sources, heuristics, evaluation)
 docs/PLAN.md           functional and technical plan
 tests/                 pytest suite
 ```

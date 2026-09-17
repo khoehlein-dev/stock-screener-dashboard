@@ -1,0 +1,88 @@
+# Trading costs and market conventions for strategy evaluation.
+# Broker: Scalable Capital (Germany). All amounts in EUR unless stated.
+#
+# IMPORTANT: the numbers below are a template based on the publicly advertised
+# price list as remembered at the time of writing. They are NOT verified against
+# the current price list and MUST be checked against
+# https://scalable.capital (Preise / Pricing) before relying on any evaluation.
+# Everything the evaluation charges is read from this file; nothing is hard-coded.
+
+meta:
+  broker: "Scalable Capital"
+  currency: "EUR"
+  as_of: "2026-09-17"
+  verified: false          # set to true once you have checked the numbers
+
+# The plan the evaluation assumes. One of the keys under `plans`.
+active_plan: "free_broker"
+
+plans:
+  free_broker:
+    monthly_fee: 0.0
+    venues:
+      gettex:
+        order_fee_fixed: 0.99      # per executed order
+        order_fee_pct: 0.0         # of order value
+        order_fee_min: 0.0
+        free_above_order_value: null   # no free trades on this plan
+      xetra:
+        order_fee_fixed: 3.99
+        order_fee_pct: 0.0001      # 0.01 %
+        order_fee_min: 1.50
+        free_above_order_value: null
+    # Derivatives of "partner issuers" traded on gettex are advertised with a
+    # reduced/zero order fee from a minimum order value. Verify per issuer.
+    partner_derivatives:
+      venue: gettex
+      order_fee_fixed: 0.0
+      min_order_value: 250.0       # below this the standard venue fee applies
+      issuers: ["HSBC", "UniCredit", "Goldman Sachs", "Societe Generale", "BNP Paribas", "Vontobel", "Morgan Stanley", "J.P. Morgan"]
+  prime_plus:
+    monthly_fee: 4.99
+    venues:
+      gettex:
+        order_fee_fixed: 0.0
+        order_fee_pct: 0.0
+        order_fee_min: 0.0
+        free_above_order_value: 250.0   # orders below this cost `small_order_fee`
+        small_order_fee: 0.99
+      xetra:
+        order_fee_fixed: 3.99
+        order_fee_pct: 0.0001
+        order_fee_min: 1.50
+        free_above_order_value: null
+    partner_derivatives:
+      venue: gettex
+      order_fee_fixed: 0.0
+      min_order_value: 250.0
+      issuers: ["HSBC", "UniCredit", "Goldman Sachs", "Societe Generale", "BNP Paribas", "Vontobel", "Morgan Stanley", "J.P. Morgan"]
+
+# Venue used for all simulated orders (must exist under plans.<plan>.venues)
+venue: "gettex"
+
+# Exit assumptions at the strategy horizon
+exit:
+  # relative bid-ask spread assumed at exit as a multiple of today's spread
+  spread_multiplier: 1.0
+  # minimum absolute half-spread in EUR per unit applied at exit
+  min_half_spread: 0.005
+  # residual value paid after a knock-out, as a fraction of (barrier - strike) x ratio
+  # (0 for classic turbos where barrier == strike; ~1 for mini futures with stop-loss)
+  knockout_recovery: 0.5
+
+# Issuer product economics used when the data source does not deliver them
+issuer_defaults:
+  ko_financing_rate_long: 0.055     # p.a., added to the strike of open-end long KOs (reference rate + issuer spread)
+  ko_financing_rate_short: 0.015    # p.a., subtracted from the strike of open-end short KOs
+  warrant_spread_pct: 0.01          # relative bid-ask spread of warrants if unknown
+  ko_spread_pct: 0.006              # relative bid-ask spread of KO certificates if unknown
+
+# Foreign exchange: US underlyings are quoted in USD, products in EUR
+fx:
+  eur_usd: 1.10                     # EUR/USD used to convert intrinsic values; FX risk is not simulated
+  fx_fee_pct: 0.0                   # products trade in EUR on gettex, so no FX fee is applied
+
+# Taxes (off by default: they are not trading costs, but can be applied to positive P&L)
+tax:
+  apply: false
+  rate: 0.26375                     # 25 % Abgeltungsteuer + 5.5 % solidarity surcharge (no church tax)
