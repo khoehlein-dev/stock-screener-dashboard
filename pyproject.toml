@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-screener-dashboard"
+version = "0.1.0"
+description = "Options-aware stock screener dashboard built on the Massive API, QuantLib and Dash"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "massive>=2.6",
+  "QuantLib>=1.33",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "scipy>=1.11",
+  "pyarrow>=15",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "python-dotenv>=1.0",
+  "dash>=2.17",
+  "dash-ag-grid>=31",
+  "plotly>=5.20",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+screener = "stock_screener.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["stock_screener*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"stock_screener/cli.py" = ["B008"]  # typer.Option in defaults is the typer idiom
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
